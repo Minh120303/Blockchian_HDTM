@@ -84,6 +84,6 @@ const contractAddress =
 
 ## 👨‍💻 Tác giả
 
-- ✉️ [ngotrungduc74@gmail.com]
+- ✉️ [lethimjnh36@gmail.com]
 - 📅 Ngày tạo: 2024-2025
 - 🛠 Dành cho mục đích học tập và thử nghiệm

@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1.0" />
+		<title>Smart Loan DApp</title>
+		<script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+		<style>
+			body {
+				font-family: Arial, sans-serif;
+				max-width: 700px;
+				margin: 40px auto;
+				padding: 20px;
+				border: 1px solid #ccc;
+				border-radius: 10px;
+			}
+			input,
+			select {
+				margin: 6px 0;
+				width: 100%;
+				padding: 8px;
+			}
+			button {
+				padding: 10px 20px;
+				margin-top: 10px;
+				cursor: pointer;
+			}
+			.status {
+				margin-top: 10px;
+				font-weight: bold;
+				color: green;
+			}
+			.timer {
+				font-weight: bold;
+				color: red;
+			}
+			.loan-item {
+				border: 1px solid #aaa;
+				padding: 10px;
+				margin-bottom: 10px;
+			}
+		</style>
+	</head>
+	<body>
+		<h2>🔗 Smart Loan DApp</h2>
+		<button onclick="connectWallet()">
+			🔌 Kết nối MetaMask
+		</button>
+		<div
+			id="walletAddress"
+			class="status"></div>
+
+		<h3>🔑 Vai trò</h3>
+		<select
+			id="role"
+			onchange="renderRoleUI()">
+			<option value="none">
+				-- Chọn vai trò --
+			</option>
+			<option value="borrower">
+				Người vay
+			</option>
+			<option value="lender">
+				Người cho vay
+			</option>
+		</select>
+
+		<div
+			id="borrowerUI"
+			style="display: none">
+			<h3>📤 Gửi yêu cầu vay</h3>
+			<input
+				id="amount"
+				placeholder="Số tiền vay (ETH)" />
+			<input
+				id="interest"
+				placeholder="Lãi suất (%)" />
+			<input
+				id="dueInSeconds"
+				placeholder="Thời gian đáo hạn (giây từ bây giờ)" />
+			<button onclick="requestLoan()">
+				Gửi yêu cầu vay
+			</button>
+		</div>
+
+		<div
+			id="lenderUI"
+			style="display: none">
+			<h3>💸 Danh sách khoản vay</h3>
+			<div id="loanList"></div>
+
+			<h3>
+				📜 Lịch sử khoản vay đã cho
+			</h3>
+			<pre id="loanHistoryLender">
+Đang tải...</pre
+			>
+		</div>
+
+		<div
+			id="status"
+			class="status"></div>
+
+		<script>
+			const contractAddress =
+				'0x384c1e04a67da065e12b9d8a02de93b05f205c1e'
+			const abi = [
+				'function requestLoan(uint amount, uint interest, uint dueDate) public',
+				'function acceptLoan(uint index) public payable',
+				'function repayLoan(uint index) public payable',
+				'function getLoanCount() public view returns (uint)',
+				'function getLoanDetails(uint index) public view returns (address,address,uint,uint,uint,bool,bool)',
+			]
+
+			let provider,
+				signer,
+				contract,
+				currentAccount
+
+			async function connectWallet() {
+				if (window.ethereum) {
+					provider =
+						new ethers.providers.Web3Provider(
+							window.ethereum,
+							'sepolia'
+						)
+					await provider.send(
+						'eth_requestAccounts',
+						[]
+					)
+					signer = provider.getSigner()
+					currentAccount =
+						await signer.getAddress()
+					document.getElementById(
+						'walletAddress'
+					).innerText = `🟢 Đã kết nối: ${currentAccount}`
+					contract =
+						new ethers.Contract(
+							contractAddress,
+							abi,
+							signer
+						)
+					loadLoans()
+					loadLoanHistoryLender()
+				} else {
+					alert('Bạn cần cài MetaMask!')
+				}
+			}
+
+			function renderRoleUI() {
+				const role =
+					document.getElementById(
+						'role'
+					).value
+				document.getElementById(
+					'borrowerUI'
+				).style.display =
+					role === 'borrower'
+						? 'block'
+						: 'none'
+				document.getElementById(
+					'lenderUI'
+				).style.display =
+					role === 'lender'
+						? 'block'
+						: 'none'
+			}
+
+			async function requestLoan() {
+				const amount =
+					document.getElementById(
+						'amount'
+					).value
+				const interest =
+					document.getElementById(
+						'interest'
+					).value
+				const dueIn =
+					document.getElementById(
+						'dueInSeconds'
+					).value
+				const dueTimestamp =
+					Math.floor(
+						Date.now() / 1000
+					) + parseInt(dueIn)
+
+				try {
+					const tx =
+						await contract.requestLoan(
+							ethers.utils.parseEther(
+								amount
+							),
+							parseInt(interest),
+							dueTimestamp
+						)
+					await tx.wait()
+					showStatus(
+						'✅ Gửi yêu cầu vay thành công'
+					)
+					loadLoans()
+					loadLoanHistoryLender()
+				} catch (err) {
+					showStatus(
+						'❌ Lỗi yêu cầu vay: ' +
+							err.message
+					)
+				}
+			}
+
+			async function loadLoans() {
+				try {
+					const loanListEl =
+						document.getElementById(
+							'loanList'
+						)
+					if (!contract) return
+					const count =
+						await contract.getLoanCount()
+					loanListEl.innerHTML = ''
+					for (
+						let i = 0;
+						i < count;
+						i++
+					) {
+						const [
+							lender,
+							borrower,
+							amount,
+							interest,
+							dueDate,
+							accepted,
+							repaid,
+						] =
+							await contract.getLoanDetails(
+								i
+							)
+						const now = Math.floor(
+							Date.now() / 1000
+						)
+						const secondsLeft =
+							dueDate - now
+						const status = repaid
+							? '✅ Đã trả'
+							: accepted
+							? '📤 Đã vay'
+							: '⏳ Chưa cho vay'
+						const div =
+							document.createElement(
+								'div'
+							)
+						div.className = 'loan-item'
+						div.innerHTML = `
+              <b>Khoản vay #${i}</b><br/>
+              Người vay: ${borrower}<br/>
+              Số tiền: ${ethers.utils.formatEther(
+								amount
+							)} ETH<br/>
+              Lãi suất: ${interest}%<br/>
+              Đáo hạn: ${new Date(
+								dueDate * 1000
+							).toLocaleString()}<br/>
+              <span class="timer">Còn lại: ${secondsLeft}s</span><br/>
+              Trạng thái: ${status}<br/>
+              ${
+								!accepted
+									? `<button onclick="acceptLoan(${i})">Chấp nhận & Gửi ETH</button>`
+									: ''
+							}
+              ${
+								accepted && !repaid
+									? `<button onclick="repayLoan(${i})">Trả gốc + lãi</button>`
+									: ''
+							}
+            `
+						loanListEl.appendChild(div)
+					}
+				} catch (err) {
+					console.error(err)
+				}
+			}
+
+			async function acceptLoan(index) {
+				try {
+					const [, , amount] =
+						await contract.getLoanDetails(
+							index
+						)
+					const tx =
+						await contract.acceptLoan(
+							index,
+							{ value: amount }
+						)
+					await tx.wait()
+					showStatus(
+						'✅ Chấp nhận khoản vay thành công'
+					)
+					loadLoans()
+					loadLoanHistoryLender()
+				} catch (err) {
+					showStatus(
+						'❌ Lỗi chấp nhận: ' +
+							err.message
+					)
+				}
+			}
+
+			async function repayLoan(index) {
+				try {
+					const [, , amount, interest] =
+						await contract.getLoanDetails(
+							index
+						)
+					const repay = amount.add(
+						amount
+							.mul(interest)
+							.div(100)
+					)
+					const tx =
+						await contract.repayLoan(
+							index,
+							{ value: repay }
+						)
+					await tx.wait()
+					showStatus(
+						'💵 Trả nợ thành công'
+					)
+					loadLoans()
+					loadLoanHistoryLender()
+				} catch (err) {
+					showStatus(
+						'❌ Lỗi trả nợ: ' +
+							err.message
+					)
+				}
+			}
+
+			async function loadLoanHistoryLender() {
+				try {
+					const count =
+						await contract.getLoanCount()
+					let result = ''
+					for (
+						let i = 0;
+						i < count;
+						i++
+					) {
+						const [
+							lender,
+							borrower,
+							amount,
+							interest,
+							dueDate,
+							accepted,
+							repaid,
+						] =
+							await contract.getLoanDetails(
+								i
+							)
+						if (
+							lender.toLowerCase() ===
+							currentAccount.toLowerCase()
+						) {
+							result += `Khoản #${i} - Người vay: ${borrower} - Số tiền: ${ethers.utils.formatEther(
+								amount
+							)} ETH - Trạng thái: ${
+								repaid
+									? '✅ Đã trả'
+									: '⏳ Chưa trả'
+							}\n`
+						}
+					}
+					document.getElementById(
+						'loanHistoryLender'
+					).innerText =
+						result ||
+						'Không có khoản nào đã cho vay.'
+				} catch (err) {
+					document.getElementById(
+						'loanHistoryLender'
+					).innerText =
+						'Không thể tải dữ liệu.'
+				}
+			}
+
+			function showStatus(msg) {
+				document.getElementById(
+					'status'
+				).innerText = msg
+			}
+		</script>
+	</body>
+</html>
